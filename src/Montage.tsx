@@ -152,10 +152,18 @@ const HookCard: React.FC<{plan: Plan}> = ({plan}) => {
   const inS = interpolate(t, [0, 0.18], [0.92, 1], {extrapolateRight: 'clamp', easing: Easing.out(Easing.cubic)});
   const opacity = interpolate(t, [out - 0.2, out], [1, 0], {extrapolateLeft: 'clamp'});
   return (
-    <div style={{position: 'absolute', left: 70, right: 70, top: 390, display: 'flex', justifyContent: 'center', opacity, transform: `scale(${inS})`}}>
-      <div style={{background: 'rgba(8,8,12,.74)', borderRadius: 36, padding: '34px 44px', textAlign: 'center', boxShadow: '0 12px 40px rgba(0,0,0,.45)', border: `6px solid ${plan.caption.emph_color}`}}>
+    <div style={{position: 'absolute', left: 60, right: 60, top: 330, display: 'flex', justifyContent: 'center', opacity, transform: `scale(${inS})`}}>
+      <div style={{textAlign: 'center'}}>
         {plan.hook.lines.map((ln, i) => (
-          <div key={i} style={{fontFamily: FONT, fontWeight: 900, fontSize: plan.hook.font_px ?? 104, lineHeight: 1.1, color: ln.includes(plan.hook.key) ? plan.caption.emph_color : '#fff'}}>
+          <div
+            key={i}
+            style={{
+              fontFamily: FONT, fontWeight: 900, fontSize: plan.hook.font_px ?? 104, lineHeight: 1.08,
+              color: ln.includes(plan.hook.key) ? plan.caption.emph_color : '#fff',
+              WebkitTextStroke: `${Math.round((plan.hook.font_px ?? 104) * 0.1)}px #0b0b10`, paintOrder: 'stroke fill',
+              textShadow: '0 6px 22px rgba(0,0,0,.65)',
+            }}
+          >
             {ln}
           </div>
         ))}

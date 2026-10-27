@@ -16,8 +16,9 @@ from pathlib import Path
 
 PLAN_VERSION = 1
 MIN_SPEED, MAX_SPEED = 1.0, 1.3
-PUNCH = 1.35  # face-anchored punch-in framing (source is 720p: >1.4 gets soft)
-MAX_CUTAWAYS, CUTAWAY_DUR = 3, 1.15
+PUNCH = 1.5  # face-anchored punch-in framing; spec 1.45-1.65 (source is 720p, so this is already a 2.25x upscale)
+CUTAWAY_SHARE, CUTAWAY_DUR, CUTAWAY_GAP = 0.35, 1.2, 1.5  # spec: 30-45 % of cut points carry a 0.8-1.8 s cutaway
+STOP = {'этого', 'просто', 'потому', 'когда', 'который', 'тоже', 'всё', 'все', 'если', 'только', 'очень', 'сейчас', 'можно', 'нужно', 'будет', 'такой', 'такое', 'вообще'}
 
 # stems of words that carry the point of money/discipline/business/self-growth talk
 EMPH_STEMS = (
@@ -201,24 +202,38 @@ def build_plan(src: dict, raw_path: str, clip_id: str, speed: float, codeword: s
     pieces = build_pieces(segs, speed, scales, ramp_windows, faces)
     d_final = to_final(d_cut, pieces)
 
+    base_hook_out = min(2.9, max(2.0, d_final * 0.12))
     # zooms (cut timeline): opening punch + one per emphasis word
     zooms = [{"t": 0.0, "dur": 0.5, "peak": 1.12, "why": "hook-open"}]
     for i in sorted(emph):
         w = words[i]
         base = scales[min(range(len(segs)), key=lambda k: abs(cut_starts[k] - w["s"]) if cut_starts[k] <= w["s"] + 1e-6 else 1e9)]
-        zooms.append({"t": round(max(0.0, w["s"] - 0.04), 3), "dur": 0.6, "peak": round(min(1.6, max(base + 0.12, 1.12)), 3), "why": words[i]["w"]})
+        zooms.append({"t": round(max(0.0, w["s"] - 0.04), 3), "dur": 0.6, "peak": round(min(1.7, max(base + 0.12, 1.12)), 3), "why": words[i]["w"]})
 
-    # cutaway slots (final timeline): keyword cards on model-picked payoff words, 1.15 s, max 3, >= 3.5 s apart, not in the hook or the CTA
+    # cutaways (final timeline): a full-frame keyword card that REPLACES the jump on a cut point. ~35 % of the cut points,
+    # 1.2 s, >= 2.7 s apart (start to start), never inside the hook or the CTA. Text = emphasis word in the next 1.3 s, else the longest plain word there.
     cutaways: list[dict] = []
     if cutaways_on:
-        last_end = -9.0
-        for i in sorted(emph, key=lambda k: words[k]["s"]):
-            tf = to_final(words[i]["s"], pieces)
-            txt = re.sub(r"[^\w-]", "", words[i]["w"]).upper()
-            if len(txt) < 3 or tf < 3.4 or tf > d_final - 2.2 - CUTAWAY_DUR - 1.0 or tf - last_end < 3.5 or len(cutaways) >= MAX_CUTAWAYS:
+        cands = []
+        for si in range(1, len(segs)):
+            tf = to_final(cut_starts[si], pieces)
+            if tf < max(3.0, base_hook_out + 0.4) or tf > d_final - 2.2 - CUTAWAY_DUR - 0.8:
                 continue
-            cutaways.append({"t": round(tf - 0.05, 3), "dur": CUTAWAY_DUR, "text": txt, "style": len(cutaways) % 3})
-            last_end = tf - 0.05 + CUTAWAY_DUR
+            win = [w for w in words if cut_starts[si] - 0.05 <= w["s"] <= cut_starts[si] + 1.3]
+            win = [w for w in win if len(_clean(w["w"])) >= 4 and _clean(w["w"]).lower() not in STOP]
+            if not win:
+                continue
+            best = max(win, key=lambda w: (w["emph"], len(_clean(w["w"]))))
+            cands.append((tf, best, si))
+        want = round(CUTAWAY_SHARE * max(0, len(segs) - 1))
+        for tf, w, si in sorted(cands, key=lambda c: (not c[1]["emph"], -len(_clean(c[1]["w"])))):
+            if len(cutaways) >= want:
+                break
+            if all(abs(tf - c["t"]) >= CUTAWAY_GAP + CUTAWAY_DUR for c in cutaways):
+                cutaways.append({"t": round(tf, 3), "dur": CUTAWAY_DUR, "text": _clean(w["w"]).upper(), "style": 0})
+        cutaways.sort(key=lambda c: c["t"])
+        for k, c in enumerate(cutaways):
+            c["style"] = k % 3
     in_cut = lambda tf, pad=0.0: any(c["t"] - pad <= tf <= c["t"] + c["dur"] + pad for c in cutaways)
 
     # sparse SFX (final timeline `tf`): spec = at most 1 per 2 cuts, whoosh on cutaway entries, quiet pop on 2 emphasis words, hit + riser into the CTA
@@ -273,7 +288,7 @@ def build_plan(src: dict, raw_path: str, clip_id: str, speed: float, codeword: s
         "cta": {"codeword": (codeword or "АГЕНТ").upper(), "line": "Напиши в комментариях", "dur_final": 2.2},
         "music": {"bed": int(clip_id) % 3 if str(clip_id).isdigit() else 0, "gain_db": -24.0, "duck_db": -9.0},
         "grade": {"brightness": 1.07, "contrast": 1.06, "saturate": 1.08},
-        "caption": {"font_px": 54, "max_words": 4, "max_chars": 24, "emph_color": "#FFC83D", "chin_off": 0.05, "min_y": 0.5, "max_y": 0.84},
+        "caption": {"font_px": 54, "max_words": 4, "max_chars": 24, "emph_color": "#FFC83D", "chin_off": 0.025, "min_y": 0.52, "max_y": 0.8},
     }
     validate_plan(plan)
     return plan

@@ -58,3 +58,12 @@ test('zoom never exceeds 1.25 and snaps in', () => {
   assert.ok(scaleAt(f0 + 0.12, pieces, z, spans) > 1.2);
   for (let t = 0; t < 8; t += 0.05) assert.ok(scaleAt(t, pieces, z, spans) <= 1.25);
 });
+
+test('hard cut settles: overscaled for ~4 frames, then exactly the base scale', () => {
+  const spans = pieceSpans(pieces);
+  const tCut = spans[1].t0;
+  assert.ok(spans[1].cut && !spans[2].cut && !spans[0].cut);
+  const at0 = scaleAt(tCut + 0.001, pieces, [], spans);
+  assert.ok(at0 > 1.1 + 0.03 && at0 <= 1.1 + 0.05 + 1e-9);
+  assert.ok(Math.abs(scaleAt(tCut + 0.14, pieces, [], spans) - 1.1) < 1e-9);
+});

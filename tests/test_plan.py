@@ -71,7 +71,7 @@ class Plan(unittest.TestCase):
         em = [w["s"] for w in p["words"] if w["emph"]]
         self.assertTrue(em)
         self.assertTrue(all(b - a >= 1.6 - 1e-6 for a, b in zip(em, em[1:])))
-        self.assertTrue(all(z["peak"] <= 1.6 + 1e-9 for z in p["zooms"]))
+        self.assertTrue(all(z["peak"] <= 1.7 + 1e-9 for z in p["zooms"]))
 
     def test_sfx_rules(self):
         p = self.build()
@@ -127,6 +127,30 @@ class Plan(unittest.TestCase):
 
     def test_cta_default_and_override(self):
         self.assertEqual(self.build()["cta"]["codeword"], "КОД")
+
+    def test_cutaways_sit_on_cut_points_with_share_and_spacing(self):
+        src = synth_src(n_seg=10, seg_len=3.2)
+        p = mp.build_plan(src, "raw.mp4", "t2", 1.2, None, probe={"width": 720, "height": 1280, "fps": 30.0})
+        cuts, acc = [], 0.0
+        for a, b in p["segments"][:-1]:
+            acc += b - a
+            cuts.append(mp.to_final(acc, p["pieces"]))
+        cw = p["cutaways"]
+        share = len(cw) / len(cuts)
+        self.assertTrue(0.25 <= share <= 0.45, share)
+        for c in cw:
+            self.assertTrue(any(abs(c["t"] - x) < 0.01 for x in cuts), "cutaway not on a cut point")
+            self.assertTrue(0.8 <= c["dur"] <= 1.8)
+            self.assertGreaterEqual(c["t"], p["hook"]["t_out_final"])
+            self.assertLessEqual(c["t"] + c["dur"], p["final_duration"] - p["cta"]["dur_final"])
+        for a, b in zip(cw, cw[1:]):
+            self.assertGreaterEqual(b["t"] - a["t"], 2.7 - 1e-6)
+
+    def test_punch_in_in_spec_range(self):
+        p = self.build(ramps=False)
+        self.assertTrue(1.45 <= max(x["scale"] for x in p["pieces"]) <= 1.65)
+        self.assertLessEqual(p["caption"]["font_px"], 56)
+        self.assertLessEqual(p["caption"]["max_y"], 0.8)
 
     def test_real_plans_if_present(self):
         for n in ("580", "581", "582"):
