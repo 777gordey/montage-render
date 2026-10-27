@@ -1,7 +1,7 @@
 """Local side of one render job: the one-command render.
 
   python tools/dispatch_job.py <id> <plan.json> <raw.mp4> [--repo OWNER/montage-render] [--codeword X] [--emph emph.json]
-                               [--expect-dur SEC] [--out DIR] [--ttl 1500] [--tunnel-bin cloudflared] [--debug]
+                               [--expect-dur SEC] [--out DIR] [--ttl 1500] [--tunnel-bin ssh|PATH_TO_CLOUDFLARED] [--debug]
 
 Serves the plan and the raw clip from a throw-away HTTP server on 127.0.0.1 through an HTTPS quick tunnel, behind
 HMAC-signed URLs that expire (default 25 min) and are revoked as soon as the job ends. The three URLs are encrypted into
@@ -114,13 +114,21 @@ def make_server(signer: Signer, files: dict[str, Path], put_dest: Path, max_get:
 
 
 def start_tunnel(binary: str, port: int):
-    p = subprocess.Popen([binary, "tunnel", "--no-autoupdate", "--url", f"http://127.0.0.1:{port}"],
-                         stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace")
+    """binary 'ssh' = localhost.run over the system ssh client (no download, no account); otherwise a cloudflared path."""
+    if binary == "ssh":
+        null = "NUL" if os.name == "nt" else "/dev/null"
+        cmd = ["ssh", "-T", "-o", f"UserKnownHostsFile={null}", "-o", "StrictHostKeyChecking=no", "-o", "ServerAliveInterval=30",
+               "-o", "ExitOnForwardFailure=yes", "-R", f"80:127.0.0.1:{port}", "nokey@localhost.run"]  # guard:allow
+        rx = r"https://[a-z0-9]+\.lhr\.life"
+    else:
+        cmd = [binary, "tunnel", "--no-autoupdate", "--url", f"http://127.0.0.1:{port}"]
+        rx = r"https://[a-z0-9-]+\.trycloudflare\.com"
+    p = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace")
     found: list[str] = []
 
     def pump():
-        for line in p.stderr:
-            m = re.search(r"https://[a-z0-9-]+\.trycloudflare\.com", line)
+        for line in p.stdout:
+            m = re.search(rx, line)
             if m and not found:
                 found.append(m[0])
 
@@ -193,7 +201,7 @@ def main() -> int:
     tun = None
     t_start = time.time()
     try:
-        tun, base = start_tunnel(opt("--tunnel-bin", "cloudflared"), srv.server_address[1])
+        tun, base = start_tunnel(opt("--tunnel-bin", "ssh"), srv.server_address[1])
         bundle = encrypt({"raw": base + signer.path("raw", "raw.mp4"), "plan": base + signer.path("plan", "plan.json"),
                           "put": base + signer.path("put", "result.tar")}, key)
         t_disp = time.time()

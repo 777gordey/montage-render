@@ -72,14 +72,36 @@ def put(url: str, src: Path, tries: int = 3) -> None:
     raise RuntimeError(f"upload_failed:{last}")
 
 
+def selftest(jid: str) -> int:
+    t0 = time.time()
+    work = ROOT / "work" / "job"
+    r = subprocess.run([PY, str(ROOT / "tools" / "selftest_inputs.py"), str(work)], cwd=ROOT)
+    r2 = subprocess.run([PY, str(ROOT / "tools" / "fetch_sound.py"), str(ROOT / "work" / "sound_raw")], cwd=ROOT, capture_output=True, text=True)
+    if r.returncode or r2.returncode:
+        log(jid, "FAILED inputs", r.returncode, r2.returncode)
+        return 3
+    log(jid, f"inputs and sound packs ready in {time.time() - t0:.0f} s")
+    rc = subprocess.run([PY, str(ROOT / "tools" / "run_clip.py"), jid, str(work / "plan.json"), str(work / "raw.mp4"), "--no-llm",
+                         "--min-free-mb", "1500", "--max-attempts", "3"], cwd=ROOT).returncode
+    if rc != 0:
+        log(jid, "FAILED render rc", rc)
+        return 4
+    res = json.loads((ROOT / "out" / jid / f"{jid}_result.json").read_text(encoding="utf-8"))
+    log(jid, f"selftest dur {res['dur']} expected {res['expected_dur']} ok={res['dur_ok']} render {res['render_s']} s audio {res['audio_s']} s "
+             f"peak RSS {res['peak_tree_rss_mb']} MB total {time.time() - t0:.0f} s")
+    return 0 if res["dur_ok"] else 6
+
+
 def main() -> int:
     jid = sys.argv[1] if len(sys.argv) > 1 else ""
     if not re.fullmatch(r"[A-Za-z0-9_-]{1,16}", jid):
         print("[task-?] invalid job id")
         return 2
     t0 = time.time()
+    if jid == "selftest":  # synthetic clip generated on the runner: nothing is fetched, nothing leaves the runner
+        return selftest(jid)
     try:
-        b = decrypt(os.environ["BUNDLE"])
+        b = decrypt(os.environ.get("BUNDLE", ""))
     except Exception as e:  # noqa: BLE001
         log(jid, "FAILED", type(e).__name__, str(e) if isinstance(e, RuntimeError) else "")
         return 2

@@ -5,12 +5,13 @@ on:
   workflow_dispatch:
     inputs:
       task_id:
-        description: "generic job id (letters, digits, - _; max 16)"
+        description: "generic job id (letters, digits, - _; max 16); selftest = synthetic clip on the runner"
         required: true
         type: string
       bundle:
-        description: "encrypted signed URLs (openssl aes-256-cbc, base64)"
-        required: true
+        description: "encrypted signed URLs (openssl aes-256-cbc, base64); empty for task_id selftest"
+        required: false
+        default: ""
         type: string
       debug:
         description: "print the last 12 lines of a failed render"
