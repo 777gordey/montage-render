@@ -1,0 +1,65 @@
+name: render
+# One render job per dispatch. Inputs are a generic job id and ONE encrypted bundle (signed raw/plan/upload URLs);
+# the key is the Actions secret MONTAGE_BUNDLE_KEY. No artifacts, no media cache, no media in git.
+on:
+  workflow_dispatch:
+    inputs:
+      task_id:
+        description: "generic job id (letters, digits, - _; max 16)"
+        required: true
+        type: string
+      bundle:
+        description: "encrypted signed URLs (openssl aes-256-cbc, base64)"
+        required: true
+        type: string
+      debug:
+        description: "print the last 12 lines of a failed render"
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: render
+  cancel-in-progress: false
+
+jobs:
+  render:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "24.18.1"
+          cache: npm
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: system packages
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends ffmpeg fonts-dejavu-core \
+            libnss3 libdbus-1-3 libatk1.0-0t64 libatk-bridge2.0-0t64 libasound2t64 libxrandr2 libxkbcommon0 \
+            libxfixes3 libxcomposite1 libxdamage1 libgbm1 libcups2t64 libpango-1.0-0 libcairo2
+      - run: pip install -r requirements.txt
+      - run: npm ci --ignore-scripts
+      - name: headless browser cache (binary of the pinned Remotion version, no media)
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: node_modules/.remotion
+          key: remotion-browser-4.0.538-${{ runner.os }}
+      - name: render
+        env:
+          BUNDLE: ${{ inputs.bundle }}
+          MONTAGE_BUNDLE_KEY: ${{ secrets.MONTAGE_BUNDLE_KEY }}
+          MONTAGE_DEBUG: ${{ inputs.debug && '1' || '0' }}
+          TASK_ID: ${{ inputs.task_id }}
+        run: |
+          set +x
+          python tools/ci_job.py "$TASK_ID"

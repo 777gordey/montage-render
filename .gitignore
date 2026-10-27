@@ -1,0 +1,20 @@
+node_modules/
+work/
+out/
+in/
+assets/
+plans/
+logs/
+.env*
+*.part
+__pycache__/
+# media never goes into git (also enforced by scripts/guard.py)
+*.mp4
+*.mov
+*.mkv
+*.webm
+*.wav
+*.mp3
+*.png
+*.jpg
+*.jpeg

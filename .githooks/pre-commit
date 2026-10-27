@@ -1,0 +1,3 @@
+#!/bin/sh
+# secrets / PII / media scan on the staged files; enable once with: git config core.hooksPath .githooks
+exec python scripts/guard.py --staged
